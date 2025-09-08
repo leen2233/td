@@ -8,6 +8,7 @@ import (
 	"time"
 	"errors"
 	"strings"
+	"strconv"
 )
 
 func add(text string) error {
@@ -86,16 +87,52 @@ func list() error {
 		return err
 	}
 
-	var longest_text_length int
+	longest_text_length := 2
+	longest_id_length := 2
+	longest_timestamp_length := 10
+	longest_done_length := 4
+	var counter int
+
 	for _, task := range tasks {
 		if len(task.Text) > longest_text_length {
 			longest_text_length = len(task.Text)
 		}
+		id_length := len(strconv.Itoa(task.ID))
+		if id_length > longest_id_length {
+			longest_id_length = id_length
+		}
 	}
 
+	printHeader(longest_id_length, longest_text_length, longest_timestamp_length, longest_done_length)
+
 	for _, task := range tasks {
-		fmt.Println(task.ID, "|", task.Text, strings.Repeat(" ", longest_text_length-len(task.Text)), "|", task.Timestamp, "|", task.Done)
+		var done, arrow string
+		if counter % 2 == 1 {
+			arrow = "."
+		}else{
+			arrow = " "
+		}
+
+		if task.Done {
+			done = " ✅  |"
+		}else{
+			done = " ❌  |"
+		}
+		fmt.Println(
+			"|",
+			task.ID,
+			strings.Repeat(" ", longest_id_length-len(strconv.Itoa(task.ID))),
+			"|",
+			task.Text,
+			strings.Repeat(arrow, longest_text_length-len(task.Text)),
+			"|",
+			task.Timestamp,
+			"|",
+			done)
+		counter += 1
 	}
+
+	printFooter(longest_id_length, longest_text_length, longest_timestamp_length, longest_done_length)
 
 	return nil
 }
@@ -177,4 +214,56 @@ func saveTasks(tasks []Task) error {
 		return err
 	}
 	return ioutil.WriteFile("tasks.json", data, 0644)
+}
+
+func printHeader(longest_id_length, longest_text_length, longest_timestamp_length, longest_done_length int){
+	fmt.Println(
+		"┌",
+		strings.Repeat("─", longest_id_length + 1),
+		"┬",
+		strings.Repeat("─", longest_text_length + 1),
+		"┬",
+		strings.Repeat("─", longest_timestamp_length),
+		"┬",
+		strings.Repeat("─", longest_done_length),
+		"┐",
+	)
+	fmt.Println(
+		"| ID",
+		strings.Repeat(" ", longest_id_length - 2),
+		"|",
+		"Text",
+		strings.Repeat(" ", longest_text_length - 4),
+		"|",
+		"Timestamp ",
+		"|",
+		"Done",
+		"|",
+	)
+	fmt.Println(
+		"├",
+		strings.Repeat("─", longest_id_length + 1),
+		"┼",
+		strings.Repeat("─", longest_text_length + 1),
+		"┼",
+		strings.Repeat("─", longest_timestamp_length),
+		"┼",
+		strings.Repeat("─", longest_done_length),
+		"┤",
+	)
+}
+
+
+func printFooter(longest_id_length, longest_text_length, longest_timestamp_length, longest_done_length int) {
+	fmt.Println(
+		"└",
+		strings.Repeat("─", longest_id_length + 1),
+		"┴",
+		strings.Repeat("─", longest_text_length + 1),
+		"┴",
+		strings.Repeat("─", longest_timestamp_length),
+		"┴",
+		strings.Repeat("─", longest_done_length),
+		"┘",
+	)
 }
