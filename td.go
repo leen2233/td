@@ -1,25 +1,27 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"errors"
 	"strconv"
 	"strings"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 func main() {
-	commands := map[string]func(args []string) error {
-		"add": func(args []string) error {
+	commands := map[string]func(db *sql.DB, args []string) error {
+		"add": func(db *sql.DB, args []string) error {
 			if len(args) < 1 {
 				return errors.New("add: missing 'text' argument")
 			}
 
 			text := strings.Join(args, " ")
 
-			return add(text)
+			return add(db, text)
 		},
-		"delete": func(args []string) error {
+		"delete": func(db *sql.DB, args []string) error {
 			if len(args) < 1 {
 				return errors.New("delete: missing 'taskId' argument")
 			}
@@ -27,9 +29,9 @@ func main() {
 			if err != nil {
 				return errors.New(fmt.Sprintf("delete: invalid 'taskId': %v", err))
 			}
-			return delete(taskId)
+			return delete(db, taskId)
 		},
-		"edit": func(args []string) error {
+		"edit": func(db *sql.DB, args []string) error {
 			if len(args) < 2 {
 				return errors.New("edit: missing 'taskId' or 'newText' arguments")
 			}
@@ -39,12 +41,12 @@ func main() {
 			}
 
 			text := strings.Join(args[1:], " ")
-			return edit(taskId, text)
+			return edit(db, taskId, text)
 		},
-		"list": func(args []string) error {
-			return list()
+		"list": func(db *sql.DB, args []string) error {
+			return list(db)
 		},
-		"done": func(args []string) error {
+		"done": func(db *sql.DB, args []string) error {
 			if len(args) < 1 {
 				return errors.New("delete: missing 'taskId' argument")
 			}
@@ -52,9 +54,9 @@ func main() {
 			if err != nil {
 				return errors.New(fmt.Sprintf("delete: invalid 'taskId': %v", err))
 			}
-			return done(taskId)
+			return done(db, taskId)
 		},
-		"undone": func(args []string) error {
+		"undone": func(db *sql.DB, args []string) error {
 			if len(args) < 1 {
 				return errors.New("delete: missing 'taskId' argument")
 			}
@@ -62,7 +64,7 @@ func main() {
 			if err != nil {
 				return errors.New(fmt.Sprintf("delete: invalid 'taskId': %v", err))
 			}
-			return undone(taskId)
+			return undone(db, taskId)
 		},
 	}
 
@@ -72,13 +74,34 @@ func main() {
 		os.Exit(1)
 	}
 
+	// initialize sqlite3 database
+	db, err := sql.Open("sqlite3", "./db.sqlite3")
+	if err != nil {
+		fmt.Println("Error: ", err)
+		os.Exit(1)
+	}
+	defer db.Close()
+
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS tasks (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			text TEXT,
+			timestamp INTEGER,
+			done BOOLEAN
+		)
+	`)
+	if err != nil {
+		fmt.Println("Error: ", err)
+		os.Exit(1)
+	}
+
 	command := os.Args[1]
 	args := os.Args[2:]
 
 	if cmd, ok:= commands[command]; ok {
-		err := cmd(args)
+		err := cmd(db, args)
 		if err != nil {
-			fmt.Println("Error: %v\n", err)
+			fmt.Println("Error: ", err)
 			os.Exit(1)
 		}
 	} else {

@@ -1,93 +1,104 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
-	"encoding/json"
-	"io/ioutil"
-	"os"
 	"time"
-	"errors"
 	"strings"
 	"strconv"
 )
 
-func add(text string) error {
-	tasks, err := getTasks()
-	if err != nil {
-		return err
-	}
-	latestTaskId := getLatestTaskId(tasks)
+func add(db *sql.DB, text string) error {
 	timestamp := time.Now().Unix()
 
-	task := Task{
-		ID: latestTaskId + 1,
-		Text: text,
-		Timestamp: timestamp,
-		Done: false,
+	stmt, err := db.Prepare("INSERT INTO tasks (text, timestamp, done) VALUES (?, ?, ?)")
+	if err != nil {
+		return err
 	}
+	defer stmt.Close()
 
-	tasks = append(tasks, task)
-	err = saveTasks(tasks)
+	_, err = stmt.Exec(text, timestamp, false)
 	if err != nil {
 		return err
 	}
 
-	fmt.Println("Saved task")
+	fmt.Println("Task saved.")
 	return nil
 }
 
 
-func delete(taskId int) error {
-	tasks, err := getTasks()
+func delete(db *sql.DB, taskId int) error {
+	stmt, err := db.Prepare("DELETE FROM tasks WHERE id = ?")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	result, err := stmt.Exec(taskId)
 	if err != nil {
 		return err
 	}
 
-	for i, task := range tasks {
-		if task.ID == taskId {
-			tasks = append(tasks[:i], tasks[i+1:]...)
-			err = saveTasks(tasks)
-			if err != nil {
-				return err
-			}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
 
-			fmt.Println(fmt.Sprintf("Task %d deleted", taskId))
-			return nil
+	if rowsAffected > 0 {
+		fmt.Println(fmt.Sprintf("Task %d deleted", taskId))
+	} else {
+		fmt.Println("No task found with given id.")
+	}
+
+	return nil
+}
+
+func edit(db *sql.DB, taskId int, newText string) error {
+	stmt, err := db.Prepare("UPDATE tasks SET text = ? WHERE id = ?")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	result, err := stmt.Exec(newText, taskId)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected > 0 {
+		fmt.Println(fmt.Sprintf("Task %d edited to %v", taskId, newText))
+	} else {
+		fmt.Println("No task found with given id.")
+	}
+
+	return nil
+}
+
+func list(db *sql.DB) error {
+	rows, err := db.Query("SELECT * FROM tasks")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	tasks := []Task{}
+
+	for rows.Next() {
+		var task Task
+
+		err := rows.Scan(&task.ID, &task.Text, &task.Timestamp, &task.Done)
+		if err != nil {
+			return err
 		}
+		tasks = append(tasks, task)
 	}
 
-	return nil
-}
-
-func edit(taskId int, newText string) error {
-	tasks, err := getTasks()
-	if err != nil {
-		return err
-	}
-
-	for i, task := range tasks {
-		if task.ID == taskId {
-			tasks[i].Text = newText
-
-			err = saveTasks(tasks)
-			if err != nil {
-				return err
-			}
-			fmt.Println(fmt.Sprintf("Task %d edited to %v", taskId, newText))
-			return nil
-		}
-	}
-
-	return nil
-}
-
-func list() error {
-	tasks, err := getTasks()
-	if err != nil {
-		return err
-	}
-
-	longest_text_length := 2
+	longest_text_length := 4
 	longest_id_length := 2
 	longest_timestamp_length := 10
 	longest_done_length := 4
@@ -105,32 +116,39 @@ func list() error {
 
 	printHeader(longest_id_length, longest_text_length, longest_timestamp_length, longest_done_length)
 
-	for _, task := range tasks {
-		var done, arrow string
-		if counter % 2 == 1 {
-			arrow = "."
-		}else{
-			arrow = " "
-		}
+	if len(tasks) > 0 {
+		for _, task := range tasks {
+			var done, arrow string
+			if counter % 2 == 1 {
+				arrow = "."
+			}else{
+				arrow = " "
+			}
 
-		if task.Done {
-			done = " ✅  |"
-		}else{
-			done = " ❌  |"
+			if task.Done {
+				done = " ✅  |"
+			}else{
+				done = " ❌  |"
+			}
+			fmt.Println(
+				"|",
+				task.ID,
+				strings.Repeat(" ", longest_id_length-len(strconv.Itoa(task.ID))),
+				"|",
+				task.Text,
+				strings.Repeat(arrow, longest_text_length-len(task.Text)),
+				"|",
+				task.Timestamp,
+				"|",
+				done)
+			counter += 1
 		}
-		fmt.Println(
-			"|",
-			task.ID,
-			strings.Repeat(" ", longest_id_length-len(strconv.Itoa(task.ID))),
-			"|",
-			task.Text,
-			strings.Repeat(arrow, longest_text_length-len(task.Text)),
-			"|",
-			task.Timestamp,
-			"|",
-			done)
-		counter += 1
+	}else {
+		all_characters_length := longest_id_length + 1 + longest_text_length + 1 + 10 + 1 + 2
+		spaces := all_characters_length
+		fmt.Println("|", strings.Repeat(" ", spaces/2), "No tasks", strings.Repeat(" ", spaces/2), " |")
 	}
+
 
 	printFooter(longest_id_length, longest_text_length, longest_timestamp_length, longest_done_length)
 
@@ -138,83 +156,59 @@ func list() error {
 }
 
 
-func done(taskId int) error {
-	tasks, err := getTasks()
+func done(db *sql.DB, taskId int) error {
+	stmt, err := db.Prepare("UPDATE tasks SET done=true WHERE id = ?")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	result, err := stmt.Exec(taskId)
 	if err != nil {
 		return err
 	}
 
-	for i, task := range tasks {
-		if task.ID == taskId {
-			tasks[i].Done = true
-			err := saveTasks(tasks)
-			if err != nil {
-				return err
-			}
-			fmt.Printf("Task with id: %d marked as done\n", taskId)
-			return nil
-		}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
 	}
+
+	if rowsAffected > 0 {
+		fmt.Printf("Task with id: %d marked as done\n", taskId)
+	} else {
+		fmt.Println("No task found with given id.")
+	}
+
 	return nil
 }
 
 
-func undone(taskId int) error {
-	tasks, err := getTasks()
+func undone(db *sql.DB, taskId int) error {
+	stmt, err := db.Prepare("UPDATE tasks SET done=false WHERE id = ?")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	result, err := stmt.Exec(taskId)
 	if err != nil {
 		return err
 	}
 
-	for i, task := range tasks {
-		if task.ID == taskId {
-			tasks[i].Done = false
-			err := saveTasks(tasks)
-			if err != nil {
-				return err
-			}
-			fmt.Printf("Task with id: %d marked as undone\n", taskId)
-			return nil
-		}
-	}
-	return errors.New(fmt.Sprintf("Task with task id: %d not found", taskId))
-}
-
-func getLatestTaskId(tasks []Task) int {
-	biggestId := 1
-	for _, task := range tasks {
-		if task.ID > biggestId {
-			biggestId = task.ID
-		}
-	}
-	return biggestId
-}
-
-func getTasks() ([]Task, error) {
-	data, err := ioutil.ReadFile("tasks.json")
-	if err != nil {
-		if os.IsNotExist(err){
-			data = []byte("[]")
-			err = ioutil.WriteFile("tasks.json", data, 0644)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			return nil, err
-		}
-	}
-	var tasks []Task
-	err = json.Unmarshal(data, &tasks)
-	return tasks, err
-}
-
-
-func saveTasks(tasks []Task) error {
-	data, err := json.MarshalIndent(tasks, "", "  ")
+	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile("tasks.json", data, 0644)
+
+	if rowsAffected > 0 {
+		fmt.Printf("Task with id: %d marked as not done\n", taskId)
+	} else {
+		fmt.Println("No task found with given id.")
+	}
+
+	return nil
 }
+
 
 func printHeader(longest_id_length, longest_text_length, longest_timestamp_length, longest_done_length int){
 	fmt.Println(
