@@ -130,6 +130,30 @@ func list(db *sql.DB) error {
 			}else{
 				done = " ❌  |"
 			}
+
+			// calculate relative time
+			current_timestamp := time.Now().Unix()
+			passed_time := current_timestamp - task.Timestamp
+
+			var time_text string
+			if passed_time / 31536000 != 0 {
+				time_text = fmt.Sprintf("%dy ago", passed_time / 31536000)
+			} else if passed_time / 2592000 != 0 {
+				time_text = fmt.Sprintf("%dm ago", passed_time / 2592000)
+			} else if passed_time / 86400 != 0 {
+				time_text = fmt.Sprintf("%dd ago", passed_time / 86400)
+			} else if passed_time / 3600 != 0 {
+				time_text = fmt.Sprintf("%dh ago", passed_time / 3600)
+			} else if passed_time / 60 != 0 {
+				time_text = fmt.Sprintf("%dm ago", passed_time / 60)
+			} else if passed_time < 10 {
+				time_text = fmt.Sprintf("just now")
+			} else {
+				time_text = fmt.Sprintf("%ds ago", passed_time)
+			}
+
+
+
 			fmt.Println(
 				"|",
 				task.ID,
@@ -138,7 +162,8 @@ func list(db *sql.DB) error {
 				task.Text,
 				strings.Repeat(arrow, longest_text_length-len(task.Text)),
 				"|",
-				task.Timestamp,
+				time_text,
+				strings.Repeat(" ", longest_timestamp_length-len(time_text)-1),
 				"|",
 				done)
 			counter += 1
